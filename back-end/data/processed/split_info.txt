@@ -3,7 +3,7 @@ INFORMATIONS SUR LE SPLIT
 ============================================================
 
 Fichier d'origine: /home/maxiiimax/Bureau/FAC/M1/SEMESTRE-1/Outils libres pour le développement logiciel/PROJET/PROGRAMME/back-end/data/raw/credit_risk_dataset.csv
-Date de création: 2026-02-14 17:35:39.483517
+Date de création: 2026-06-10 21:11:20.081772
 Random state: 42
 Test size: 0.2
 

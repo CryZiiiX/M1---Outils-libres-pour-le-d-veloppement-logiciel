@@ -1,0 +1,6 @@
+COMPARAISON class_weight='balanced' (metriques sur le test set)
+Les modeles 'balanced' sont des variantes d'etude, non deployees.
+
+Modele          Accuracy  Precision   Recall       F1  AUC-ROC
+LR balanced       0.7866     0.5072   0.7714   0.6120   0.8532
+DT balanced       0.9224     0.9039   0.7208   0.8020   0.9005

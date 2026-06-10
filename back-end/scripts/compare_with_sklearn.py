@@ -30,7 +30,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score, roc_curve
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
 from pathlib import Path
 import joblib
 
@@ -41,8 +41,8 @@ SCALER_PATH = MODELS_DIR / "scaler.joblib"
 DT_MODEL_PATH = MODELS_DIR / "decision_tree.joblib"
 
 
-def _preprocess_dataframe(df):
-    """Applique l'encodage catégoriel et la gestion des valeurs manquantes.
+def _encode_dataframe(df):
+    """Applique uniquement l'encodage catégoriel (sans imputation).
 
     Aligné avec app.preprocess.encode_input pour cohérence API/scripts.
     Invariant : l'ordre des colonnes après drop('loan_status') doit correspondre
@@ -52,7 +52,7 @@ def _preprocess_dataframe(df):
         df: DataFrame pandas brut.
 
     Returns:
-        DataFrame prétraité (encodage + fillna par moyenne).
+        DataFrame encodé (les valeurs manquantes sont conservées telles quelles).
     """
     df = df.copy()
     home_mapping = {'RENT': 0, 'OWN': 1, 'MORTGAGE': 2, 'OTHER': 3}
@@ -64,8 +64,37 @@ def _preprocess_dataframe(df):
     df['loan_grade'] = df['loan_grade'].map(grade_mapping)
     default_mapping = {'N': 0, 'Y': 1}
     df['cb_person_default_on_file'] = df['cb_person_default_on_file'].map(default_mapping)
-    df = df.fillna(df.mean())
     return df
+
+
+def compute_imputation_values(df_train):
+    """Calcule les valeurs d'imputation (moyennes) sur le train set UNIQUEMENT.
+
+    Anti-fuite de données : les statistiques d'imputation ne doivent jamais
+    inclure le test set, sinon des informations du test contaminent le
+    prétraitement (data leakage). Les mêmes valeurs sont ensuite appliquées
+    au train et au test.
+
+    Args:
+        df_train: DataFrame d'entraînement encodé (peut contenir des NaN).
+
+    Returns:
+        Series pandas des moyennes par colonne numérique, apprises sur le train.
+    """
+    return df_train.mean(numeric_only=True)
+
+
+def apply_imputation(df, impute_values):
+    """Remplace les valeurs manquantes par les moyennes apprises sur le train.
+
+    Args:
+        df: DataFrame encodé (train ou test).
+        impute_values: Series produite par compute_imputation_values (train).
+
+    Returns:
+        DataFrame sans valeur manquante.
+    """
+    return df.fillna(impute_values)
 
 
 def load_train_test_from_files():
@@ -85,13 +114,19 @@ def load_train_test_from_files():
     df_test = pd.read_csv(test_path)
 
     print(f"[OK] Train: {len(df_train)} échantillons, Test: {len(df_test)} échantillons")
-    df_train = _preprocess_dataframe(df_train)
-    df_test = _preprocess_dataframe(df_test)
+    df_train = _encode_dataframe(df_train)
+    df_test = _encode_dataframe(df_test)
 
     X_train = df_train.drop('loan_status', axis=1)
     y_train = df_train['loan_status']
     X_test = df_test.drop('loan_status', axis=1)
     y_test = df_test['loan_status']
+
+    # Imputation anti-fuite : moyennes apprises sur le train, appliquées aux deux
+    impute_values = compute_imputation_values(X_train)
+    X_train = apply_imputation(X_train, impute_values)
+    X_test = apply_imputation(X_test, impute_values)
+    print("[OK] Imputation des valeurs manquantes (moyennes du train uniquement)")
 
     print("[OK] Datasets chargés et séparés (X, y)")
 
@@ -99,33 +134,25 @@ def load_train_test_from_files():
 
 
 def load_and_preprocess_data():
-    """Charge le dataset brut et applique encodage + fillna.
+    """Charge le dataset brut et applique l'encodage catégoriel SANS imputation.
+
+    L'imputation est volontairement absente ici : elle doit être réalisée
+    APRÈS le split train/test, avec des statistiques apprises sur le train
+    uniquement (voir main), pour éviter toute fuite de données.
 
     Returns:
-        Tuple (X, y) features et labels prétraités.
+        Tuple (X, y) features encodées (NaN conservés) et labels.
     """
     print(" Chargement du dataset...")
     df = pd.read_csv(BASE_DIR / "data" / "raw" / "credit_risk_dataset.csv")
-    
+
     print(f"[OK] Dataset chargé: {df.shape[0]} lignes, {df.shape[1]} colonnes")
     print("\n Encodage des variables catégorielles...")
-    home_mapping = {'RENT': 0, 'OWN': 1, 'MORTGAGE': 2, 'OTHER': 3}
-    df['person_home_ownership'] = df['person_home_ownership'].map(home_mapping)
-    intent_mapping = {'PERSONAL': 0, 'EDUCATION': 1, 'MEDICAL': 2,
-                     'VENTURE': 3, 'HOMEIMPROVEMENT': 4, 'DEBTCONSOLIDATION': 5}
-    df['loan_intent'] = df['loan_intent'].map(intent_mapping)
-    grade_mapping = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7}
-    df['loan_grade'] = df['loan_grade'].map(grade_mapping)
-    default_mapping = {'N': 0, 'Y': 1}
-    df['cb_person_default_on_file'] = df['cb_person_default_on_file'].map(default_mapping)
-    
-    print("[OK] Variables catégorielles encodées")
-    print("\n Gestion des valeurs manquantes...")
-    df = df.fillna(df.mean())
-    print("[OK] Valeurs manquantes traitées")
+    df = _encode_dataframe(df)
+    print("[OK] Variables catégorielles encodées (imputation différée après split)")
     X = df.drop('loan_status', axis=1)
     y = df['loan_status']
-    
+
     return X, y
 
 
@@ -194,6 +221,100 @@ def train_sklearn_decision_tree(X_train, y_train, X_test, y_test):
     print("[OK] Arbre de décision entraîné")
     
     return model, training_time
+
+
+def cross_validate_max_depth(X_train, y_train):
+    """Validation croisée stratifiée 5-fold pour justifier le choix de max_depth.
+
+    Compare les profondeurs 3, 5, 7, 9 et 11 (mêmes autres hyperparamètres que
+    le modèle final) sur le train set uniquement, avec F1, recall et AUC-ROC.
+    Le test set n'est jamais utilisé ici : il reste réservé à l'évaluation finale.
+
+    Returns:
+        Liste de dicts {depth, f1, recall, auc} (moyennes sur les 5 folds).
+    """
+    print("\n Validation croisée (StratifiedKFold 5) pour max_depth...")
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    scoring = {"f1": "f1", "recall": "recall", "auc": "roc_auc"}
+    rows = []
+    for depth in [3, 5, 7, 9, 11]:
+        model = DecisionTreeClassifier(
+            max_depth=depth,
+            min_samples_split=20,
+            min_samples_leaf=10,
+            criterion='gini',
+            random_state=42,
+        )
+        scores = cross_validate(model, X_train, y_train, cv=cv, scoring=scoring)
+        rows.append({
+            "depth": depth,
+            "f1": scores["test_f1"].mean(),
+            "f1_std": scores["test_f1"].std(),
+            "recall": scores["test_recall"].mean(),
+            "auc": scores["test_auc"].mean(),
+        })
+        print(f"  max_depth={depth:2d} : F1={rows[-1]['f1']:.4f} "
+              f"(±{rows[-1]['f1_std']:.4f})  recall={rows[-1]['recall']:.4f}  "
+              f"AUC={rows[-1]['auc']:.4f}")
+
+    output_path = BASE_DIR / "results" / "metrics" / "decision_tree" / "dt_cv_max_depth.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w') as f:
+        f.write("VALIDATION CROISEE STRATIFIEE 5-FOLD (train set uniquement)\n")
+        f.write("Choix de max_depth - autres hyperparametres identiques au modele final\n\n")
+        f.write(f"{'max_depth':>9} {'F1':>8} {'F1 std':>8} {'Recall':>8} {'AUC-ROC':>8}\n")
+        for r in rows:
+            f.write(f"{r['depth']:>9} {r['f1']:>8.4f} {r['f1_std']:>8.4f} "
+                    f"{r['recall']:>8.4f} {r['auc']:>8.4f}\n")
+    print(f"[OK] Résultats CV sauvegardés: {output_path}")
+    return rows
+
+
+def compare_class_weight_variants(X_train_scaled, y_train, X_test_scaled, y_test,
+                                  X_train, X_test):
+    """Compare les modèles standards à des variantes class_weight='balanced'.
+
+    Le déséquilibre des classes (78/22) pénalise le recall des modèles non
+    pondérés. Cette fonction entraîne une LR et un DT avec
+    class_weight='balanced' (mêmes hyperparamètres par ailleurs) et sauvegarde
+    les métriques de test des quatre modèles pour comparaison dans le rapport.
+    Les modèles pondérés ne remplacent pas les modèles déployés : ils servent
+    d'étude de variante documentée.
+    """
+    print("\n Comparaison class_weight='balanced' (LR et DT)...")
+    variants = {}
+
+    lr_bal = LogisticRegression(solver='lbfgs', max_iter=1000, random_state=42,
+                                class_weight='balanced')
+    lr_bal.fit(X_train_scaled, y_train)
+    variants['LR balanced'] = (lr_bal.predict(X_test_scaled),
+                               lr_bal.predict_proba(X_test_scaled)[:, 1])
+
+    dt_bal = DecisionTreeClassifier(max_depth=7, min_samples_split=20,
+                                    min_samples_leaf=10, criterion='gini',
+                                    random_state=42, class_weight='balanced')
+    dt_bal.fit(X_train, y_train)
+    variants['DT balanced'] = (dt_bal.predict(X_test),
+                               dt_bal.predict_proba(X_test)[:, 1])
+
+    output_path = BASE_DIR / "results" / "metrics" / "class_weight_comparison.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w') as f:
+        f.write("COMPARAISON class_weight='balanced' (metriques sur le test set)\n")
+        f.write("Les modeles 'balanced' sont des variantes d'etude, non deployees.\n\n")
+        f.write(f"{'Modele':<14} {'Accuracy':>9} {'Precision':>10} {'Recall':>8} "
+                f"{'F1':>8} {'AUC-ROC':>8}\n")
+        for name, (y_pred, y_proba) in variants.items():
+            f.write(f"{name:<14} {accuracy_score(y_test, y_pred):>9.4f} "
+                    f"{precision_score(y_test, y_pred, zero_division=0):>10.4f} "
+                    f"{recall_score(y_test, y_pred, zero_division=0):>8.4f} "
+                    f"{f1_score(y_test, y_pred, zero_division=0):>8.4f} "
+                    f"{roc_auc_score(y_test, y_proba):>8.4f}\n")
+            print(f"  {name:<14}: recall="
+                  f"{recall_score(y_test, y_pred, zero_division=0):.4f}  "
+                  f"precision={precision_score(y_test, y_pred, zero_division=0):.4f}  "
+                  f"F1={f1_score(y_test, y_pred, zero_division=0):.4f}")
+    print(f"[OK] Comparaison class_weight sauvegardée: {output_path}")
 
 
 def load_or_train_lr(X_train, y_train, X_test, y_test, force_retrain):
@@ -355,15 +476,31 @@ def main():
     if result is None:
         print("\n[INFO] Fichiers train.csv et test.csv non trouvés. Génération depuis le dataset brut...")
         X, y = load_and_preprocess_data()
+        # Split AVANT imputation : les moyennes d'imputation sont apprises sur
+        # le train uniquement puis appliquées au test (anti-fuite de données)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
+        impute_values = compute_imputation_values(X_train)
+        X_train = apply_imputation(X_train, impute_values)
+        X_test = apply_imputation(X_test, impute_values)
         print(f"[OK] Split effectué: Train={len(X_train)}, Test={len(X_test)}")
+        print("[OK] Imputation post-split (moyennes du train uniquement)")
     else:
         X_train, X_test, y_train, y_test = result
     model, scaler, X_train_scaled, X_test_scaled = load_or_train_lr(
         X_train, y_train, X_test, y_test, force_retrain
     )
+
+    # Analyses de justification (CV max_depth, variantes class_weight) :
+    # exécutées si absentes ou si réentraînement forcé
+    cv_path = BASE_DIR / "results" / "metrics" / "decision_tree" / "dt_cv_max_depth.txt"
+    cw_path = BASE_DIR / "results" / "metrics" / "class_weight_comparison.txt"
+    if force_retrain or not cv_path.exists():
+        cross_validate_max_depth(X_train, y_train)
+    if force_retrain or not cw_path.exists():
+        compare_class_weight_variants(X_train_scaled, y_train, X_test_scaled,
+                                      y_test, X_train, X_test)
     y_train_pred = model.predict(X_train_scaled)
     save_python_train_metrics(y_train, y_train_pred, str(BASE_DIR / "results" / "metrics" / "logistic_regression" / "lr_python_train_metrics.txt"))
     print("\n Prédictions sur le test set...")
