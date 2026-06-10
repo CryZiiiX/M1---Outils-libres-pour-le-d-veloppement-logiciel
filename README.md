@@ -152,6 +152,8 @@ Exécute : split → train → plots
 | `make outliers` | Détection des outliers                       |
 | `make clean`    | Nettoie les fichiers générés                 |
 | `make test`     | Exécute les tests unitaires (pytest)         |
+| `make coverage` | Tests avec mesure de couverture (pytest-cov) |
+| `make docker-up`| Entraîne les modèles puis lance les conteneurs |
 | `make help`     | Affiche l'aide                               |
 
 ## Structure des données
@@ -212,24 +214,44 @@ Exécute : split → train → plots
 
 Installation : `pip install -r back-end/requirements.txt` (scripts ML) puis `pip install -r back-end/app/requirements.txt` (API).
 
-## Tests
+## Tests et intégration continue
 
-Les tests unitaires utilisent pytest. Prérequis : exécuter `make train` une fois pour générer les modèles.
+Les tests utilisent pytest. Prérequis : exécuter `make train` une fois pour générer les modèles.
 
 ```bash
-make train   # une fois
-make test    # pytest tests/ -v --tb=short
+make train     # une fois
+make test      # pytest tests/ -v --tb=short
+make coverage  # tests + couverture de code (pytest-cov)
 ```
 
-Tests purs (sans modèles) : `pytest tests/test_preprocess.py tests/test_predict.py tests/test_schemas.py`
+Tests purs (sans modèles) : `pytest tests/test_preprocess.py tests/test_schemas.py tests/test_imputation.py`
+
+Une CI GitHub Actions (`.github/workflows/tests.yml`) exécute automatiquement
+`make test` puis `make coverage` à chaque push et pull request : le dataset et
+les scripts étant versionnés, la CI entraîne les modèles puis lance la suite
+complète de tests.
 
 ## Déploiement Docker
 
+**Important : l'API a besoin des modèles `.joblib` entraînés.** La cible
+`docker-up` enchaîne les deux étapes dans le bon ordre :
+
 ```bash
-docker compose up -d --build
+make docker-up   # équivalent à : make train && docker compose up -d --build
 ```
 
 Démarre : base PostgreSQL, API (port 8000), interface web (port 5173).
+Des healthchecks Docker garantissent l'ordre de démarrage réel : l'API attend
+que PostgreSQL accepte les connexions, le front attend que `/health` réponde.
+
+## Licence
+
+Ce projet est distribué sous licence **MIT** (voir le fichier
+[LICENSE](LICENSE)) : une licence libre permissive, simple et adaptée à un
+projet académique destiné à être réutilisable. Les dépendances du projet
+conservent leurs licences respectives (BSD, MIT, Apache 2.0, GPL pour les
+outils Make et Git utilisés en développement) — l'utilisation de ces
+bibliothèques et outils libres n'impose pas leur licence au code du projet.
 
 ## Auteur
 
