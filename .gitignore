@@ -1,13 +1,5 @@
-# Build artifacts (commenté pour inclure dans le repo)
-# build/*.o
-# build/*/*.o
-# build/credit_risk_predictor
-
-# Data files (commenté pour inclure dans le repo)
-# data/raw/*.csv
-# data/processed/*.csv
-# data/processed/*.txt
-# data/stats/*.txt
+# Data (volontairement versionnées : dataset 1,8 Mo et modèles joblib,
+# pour que le dépôt soit auto-suffisant — voir rapport, chapitre 5)
 
 # Python
 .env
@@ -33,3 +25,14 @@ front-end/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Couverture de tests
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Base SQLite locale de développement
+predictions.db
+
+# Sauvegardes de travail du rapport (non versionnées)
+docs/Rapport final_backup_*/
