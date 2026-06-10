@@ -65,3 +65,26 @@ def test_schema_missing_required():
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "person_age"}
     with pytest.raises(ValidationError):
         schema.load(payload)
+
+
+def test_schema_loan_amnt_too_large():
+    """loan_amnt géant (> 100 000) → ValidationError (400), pas une erreur 500.
+
+    Sans borne max, une valeur au-delà de 2^31-1 passait la validation puis
+    débordait la colonne Integer de PostgreSQL en production.
+    """
+    schema = PredictionInputSchema()
+    payload = {**VALID_PAYLOAD, "loan_amnt": 3_000_000_000}
+    with pytest.raises(ValidationError):
+        schema.load(payload)
+    payload["loan_amnt"] = 100_001
+    with pytest.raises(ValidationError):
+        schema.load(payload)
+
+
+def test_schema_loan_percent_income_out_of_range():
+    """loan_percent_income > 1 (prêt supérieur au revenu annuel) → ValidationError."""
+    schema = PredictionInputSchema()
+    payload = {**VALID_PAYLOAD, "loan_percent_income": 1.5}
+    with pytest.raises(ValidationError):
+        schema.load(payload)

@@ -55,6 +55,18 @@ def test_predict_invalid(client):
     assert "detail" in data
 
 
+def test_predict_loan_amnt_too_large(client):
+    """POST /predict avec loan_amnt géant → 400 propre (et non un 500)."""
+    r = client.post(
+        "/predict",
+        json={**VALID_PAYLOAD, "loan_amnt": 3_000_000_000},
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    data = r.get_json()
+    assert "detail" in data
+
+
 def test_predictions_list(client):
     """GET /predictions → 200, liste (éventuellement vide)."""
     r = client.get("/predictions")

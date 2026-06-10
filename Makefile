@@ -9,7 +9,10 @@
 PYTHON = python3
 BACKEND = back-end
 
-.PHONY: all split train train-force plots explore outliers clean help test
+.PHONY: all split train train-force plots explore outliers clean help test coverage docker-up
+
+# Interpréteur de test : venv du projet s'il existe, python3 système sinon
+PYTEST_PYTHON = $(shell [ -x .venv/bin/python ] && echo ../.venv/bin/python || echo $(PYTHON))
 
 # Chaîne complète : split -> train -> plots
 all: split train plots
@@ -59,8 +62,19 @@ outliers:
 
 # Tests unitaires et API (nécessite make train pour les modèles)
 # Prérequis : créer .venv et installer deps (voir README)
+# Le choix venv/système se fait sur l'existence du venv, pas sur le code
+# retour de pytest : un échec de test reste visible et fait échouer la cible.
 test: train
-	@cd $(BACKEND) && (../.venv/bin/python -m pytest tests/ -v --tb=short 2>/dev/null || $(PYTHON) -m pytest tests/ -v --tb=short)
+	@cd $(BACKEND) && $(PYTEST_PYTHON) -m pytest tests/ -v --tb=short
+
+# Couverture de code des tests (pytest-cov), rapport terminal ligne à ligne
+coverage: train
+	@cd $(BACKEND) && $(PYTEST_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing
+
+# Déploiement complet : entraîne les modèles PUIS lance les conteneurs.
+# Évite le cas où l'API démarre sans modèles .joblib.
+docker-up: train
+	docker compose up -d --build
 
 # Nettoie les fichiers générés (destructif : results, models, data/processed)
 # À utiliser avec précaution. Réversible via make all.
@@ -84,6 +98,8 @@ help:
 	@echo "  make explore - Exploration des données"
 	@echo "  make outliers - Détection des outliers"
 	@echo "  make test    - Exécute les tests (pytest)"
+	@echo "  make coverage - Tests avec mesure de couverture (pytest-cov)"
+	@echo "  make docker-up - Entraîne les modèles puis lance docker compose"
 	@echo "  make clean   - Nettoie les fichiers générés"
 	@echo "  make help    - Affiche cette aide"
 	@echo ""

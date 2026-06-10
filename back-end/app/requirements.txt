@@ -12,6 +12,7 @@ psycopg2-binary>=2.9.0
 
 # Tests
 pytest>=7.0.0
+pytest-cov>=4.0.0
 
 # ML (nécessaire pour charger les modèles joblib)
 scikit-learn>=1.2.0
