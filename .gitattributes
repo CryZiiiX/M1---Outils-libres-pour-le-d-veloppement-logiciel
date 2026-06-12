@@ -1,0 +1,5 @@
+# Classification des fichiers pour les statistiques de langages GitHub :
+# le rapport LaTeX est de la documentation, les sorties du pipeline sont générées
+docs/** linguist-documentation
+back-end/results/** linguist-generated
+back-end/data/processed/** linguist-generated
