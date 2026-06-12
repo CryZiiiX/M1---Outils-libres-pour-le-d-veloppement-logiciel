@@ -170,7 +170,7 @@ Trois services démarrent, dans un ordre garanti par des healthchecks
 |---|---|
 | Interface web | http://localhost:5173 |
 | API Flask | http://localhost:8000 |
-| PostgreSQL | localhost:5432 |
+| PostgreSQL | localhost:5433 (5432 interne) |
 
 Pour arrêter : `docker compose down`.
 
